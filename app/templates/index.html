@@ -1,0 +1,211 @@
+<!doctype html>
+
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+
+        <title>Fruit Classifier</title>
+        <style>
+            body {
+                background: linear-gradient(87deg, #527f55 , #F7AA1E 100%) !important;
+            }
+            .overall-container {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .item-container {
+                display: flex;
+                align-items: center;
+                flex-direction: column;
+            }
+            #startbutton {
+                width: 20%;
+                margin-top: 20px;
+            }
+            p, h3 {
+                color: white;
+                font-family:Verdana, Geneva, Tahoma, sans-serif;
+            }
+            .logo-container {
+                text-align: center;
+            }
+            .logo {
+                width: 300px;
+            }
+            .upload-container {
+                text-align: center;
+                margin-top: 40px;
+            }
+            #upload {
+                width: 20%;
+            }
+            .header {
+                text-align: center;
+                font-weight: normal;
+            }
+        </style>
+    </head>
+    <body>
+        <div class='logo-container'>
+            <img src='/static/logo.png' class='logo'>
+        </div>
+        <h3 class='header'>Take a picture or upload an image:</h3>
+        <div class='overall-container'>
+            <div class="item-container" style='margin-right: 100px'>
+                <video id="video">Video stream not available.</video>
+                <button id="startbutton">Take photo</button>
+            </div>
+            <div class="item-container">
+                <canvas id="canvas" style='display:none'>
+                </canvas>
+                <div class="output">
+                <img id="photo" alt="The screen capture will appear in this box.">
+                </div>
+                <input type="file" accept="image/*" id="uploadPhoto"/>
+            </div>
+        </div>
+        <div class='upload-container'>
+            <button id="upload">Upload</button>
+            <p>Fruit: <span id='fruit'></span></p>
+            <p>Freshness: <span id='freshness'></span></p>
+        </div>
+        
+        <script>
+            // (function() {
+            var width = 320;    // We will scale the photo width to this
+            var height = 0;     // This will be computed based on the input stream
+
+            var streaming = false;
+
+            var video = null;
+            var canvas = null;
+            var photo = null;
+            var startbutton = null;
+            var uploadButton = null;
+            var uploadPhoto = null;
+            var data = null;
+            function dataURItoBlob(dataURI) {
+                // convert base64/URLEncoded data component to raw binary data held in a string
+                var byteString;
+                if (dataURI.split(',')[0].indexOf('base64') >= 0)
+                    byteString = atob(dataURI.split(',')[1]);
+                else
+                    byteString = unescape(dataURI.split(',')[1]);
+
+                // separate out the mime component
+                var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+
+                // write the bytes of the string to a typed array
+                var ia = new Uint8Array(byteString.length);
+                for (var i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+
+                return new Blob([ia], {type:mimeString});
+            }
+            function convertImgToFormData(data) {
+                var blob = dataURItoBlob(data);
+
+                var objURL = window.URL.createObjectURL(blob);
+                var image = new Image();
+                image.src = objURL;
+                window.URL.revokeObjectURL(objURL);
+
+                var formData = new FormData();
+                formData.append('file', blob, 'blob.jpg');
+                return formData
+            }
+            function clearphoto() {
+                var context = canvas.getContext('2d');
+                context.fillStyle = "#AAA";
+                context.fillRect(0, 0, canvas.width, canvas.height);
+
+                var data = canvas.toDataURL('image/png');
+                photo.setAttribute('src', data);
+                data = null;
+            }
+            function takepicture() {
+                var context = canvas.getContext('2d');
+                if (width && height) {
+                    canvas.width = width;
+                    canvas.height = height;
+                    context.drawImage(video, 0, 0, width, height);
+                
+                    data = canvas.toDataURL('image/png');
+
+                    photo.setAttribute('src', data);
+                } else {
+                    clearphoto();
+                }
+            }
+            function startup() {
+                video = document.getElementById('video');
+                canvas = document.getElementById('canvas');
+                photo = document.getElementById('photo');
+                startbutton = document.getElementById('startbutton');
+                uploadButton = document.getElementById('upload');
+                uploadPhoto = document.getElementById('uploadPhoto');
+                navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+                .then(function(stream) {
+                    video.srcObject = stream;
+                    video.play();
+                })
+                .catch(function(err) {
+                    console.log("An error occurred: " + err);
+                });
+                video.addEventListener('canplay', function(ev) {
+                    if (!streaming) {
+                        height = video.videoHeight / (video.videoWidth/width);
+                    
+                        video.setAttribute('width', width);
+                        video.setAttribute('height', height);
+                        canvas.setAttribute('width', width);
+                        canvas.setAttribute('height', height);
+                        streaming = true;
+                    }
+                }, false);
+                startbutton.addEventListener('click', function(ev){
+                    takepicture();
+                    ev.preventDefault();
+                }, false);
+                uploadButton.addEventListener('click', function() {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if (this.readyState == 4 && this.status == 200) {
+                        // Typical action to be performed when the document is ready:
+                            var response = xhttp.responseText;
+                            var fruit;
+                            var freshness;
+                            if (response.substr(0, 5) === 'fresh') {
+                                fruit = response.substr(5);
+                                freshness = 'fresh';
+                            } else {
+                                fruit = response.substr(6);
+                                freshness = 'rotten';
+                            }
+                            document.getElementById('fruit').innerHTML = fruit;
+                            document.getElementById('freshness').innerHTML = freshness;
+                        }
+                    };
+                    xhttp.open('POST', '/upload', true);
+                    xhttp.send(convertImgToFormData(data));
+                })
+                uploadPhoto.addEventListener('change', function(e) {
+                    const files = uploadPhoto.files;
+                    let reader = new FileReader()
+                    reader.onload = function(event) {
+                        data = event.target.result;
+                        photo.setAttribute('src', data);
+                        // document.getElementById('fileContent').textContent = event.target.result;
+                    }
+                    // Read in the image file as a data URL.
+                    reader.readAsDataURL(files[0]);
+                })
+                clearphoto()
+            }
+            startup()
+        </script>
+    </body>
+
+</html>
